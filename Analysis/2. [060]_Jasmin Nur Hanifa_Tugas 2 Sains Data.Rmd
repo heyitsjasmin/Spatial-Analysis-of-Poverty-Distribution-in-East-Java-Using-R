@@ -1,0 +1,165 @@
+---
+title: 'Tugas 2 Sains Data: Data Spasial'
+author: 'Jasmin Nur Hanifa - M0501241060'
+output: 
+  html_document:
+    toc: true
+    toc_float: true
+    theme: spacelab
+date: "2024-09-09"
+---
+Disusun Oleh:
+
+Kelompok 12
+
+* Mufrih Nur Huda Tri Putra - M0501241056
+
+* Jasmin Nur Hanifa - M0501241060
+
+* Nabiilah Rahmatiah Tangke -M0501241070
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Import Library
+
+```{r cars, warning=FALSE}
+library(tidyverse)
+library(RSQLite)
+library(DBI)
+library(sf)
+library(ggplot2)
+library(devtools)
+library(ggspatial)
+library(prettymapr)
+```
+
+## Import Data dan Tentang Data
+Dalam penugasan Sains Data ini, data yang digunakan adalah:
+
+1. Data `kab_indo` merupakan Simple Feature Collection dengan 522 baris dimana setiap baris mewakili batas administratif dari sebuah Kabupaten/Kota di Indonesia. Data ini memiliki 14 kolom yang berisikan berbagai informasi terkait atribut administratif.
+
+2. Data `pendMiskin` merupakan dataset yang memiliki 38 baris dimana setiap baris mewakili jumlah kabupaten/kota yang terdaftar di Jawa Timur.
+
+
+```{r}
+kab_indo <- st_read("D:\\S2\\Semester 1\\Sains Data\\Praktikum Sains Data\\Admin2Kabupaten\\idn_admbnda_adm2_bps_20200401.shp")
+glimpse(kab_indo)
+```
+
+Dataset `kab_indo` merupakan kumpulan fitur geografis dengan geometri bertipe *MULTIPOLYGON* dengan CRS: *WGS 84*
+
+```{r}
+pendMiskin <- read.csv("D:\\S2\\Semester 1\\Sains Data\\Tugas Sains Data\\Jumlah Penduduk Miskin menurut Kabupaten_Kota di Jawa Timur, 2022-2024.csv", sep = ";")
+
+glimpse(pendMiskin)
+```
+Berdasarkan data `pendMiskin` yang berisikan penduduk miskin di setiap Kabupaten/Kota yang terdaftar di Jawa Timur, maka perlu untuk melakukan filter dari data `kab_indo` dengan wilayah khusus Jawa Timur saja.
+
+```{r}
+jatim <- kab_indo %>%
+                    filter(ADM1_EN=="Jawa Timur")
+jatim
+```
+
+
+## Visualisasi Data
+### Visualisasi Peta Indonesia
+```{r}
+st_crs(3851)$proj4string
+st_crs(kab_indo)$proj4string
+kab_indo_osm <- kab_indo %>%
+  st_transform(3857)
+st_crs(kab_indo_osm)$proj4string
+```
+
+```{r message=FALSE, warning=FALSE}
+kab_indo_osm %>%
+  ggplot()+
+  annotation_map_tile(type = "osm", zoomin = 0)+
+  geom_sf()+
+  ggsflabel::geom_sf_label_repel(aes(label=str_wrap(ADM2_EN, width = 1)), size=1.75)+
+  theme_bw()
+```
+Sebagai awalan, gambar di atas merupakan peta Indonesia yang dihasilkan dari data spasial tingkat Kabupaten/Kota pada dataset `kab_indo`.
+
+### Peta Jawa Timur
+```{r}
+st_crs(3851)$proj4string
+st_crs(jatim)$proj4string
+jatim_osm <- jatim %>%
+  st_transform(3857)
+st_crs(jatim_osm)$proj4string
+```
+
+```{r message=FALSE, warning=FALSE}
+jatim_osm %>%
+  ggplot()+
+  annotation_map_tile(type = "osm", zoomin = 0)+
+  geom_sf()+
+  ggsflabel::geom_sf_label_repel(aes(label=str_wrap(ADM2_EN, width = 1)), size=1.75)+
+  theme_bw()
+```
+
+Sementara itu, peta di atas merupakkan peta yang menampilkan wilayah administratif di Jawa Timur. Garis hitam merupakan batas yang memisahkan setiap Kabupaten/Kota yang terdiri dari 38 Kabupaten/Kota.
+
+
+## Distribusi Penduduk Miskin di Jawa Timur
+Untuk melihat distribusi angka kemiskinan di Jawa Timur, kedua dataset (`kab_indo` dan `pendMiskin`) akan digabung dengan menggunakan `inner_join` berdasarkan nama Kabupaten/Kota pada dataset `pendMiskin`.
+
+Hal pertama yang dilakukan sebelum melakukan `inner_join`, adalah memeriksa penamaan Kabupaten/Kota pada kedua data. Sehingga dilakukan tahapan berikut:
+
+```{r}
+pendMiskin %>%
+  count(Kab.Kota)
+```
+
+```{r}
+kab_indo %>%
+  as_tibble() %>%
+  count(ADM2_EN)
+```
+
+
+Dikarenakan penamaan Kabupaten/Kota pada kedua dataset sudah sama, maka akan dilakukan tahap berikutnya, yaitu menggabungkan kedua data berdasarkan Kabupaten/Kota di Jawa Timur dengan menggunakan `full_join`.
+
+```{r}
+jatim_poor <- jatim %>%
+  full_join(y = pendMiskin, by = join_by(ADM2_EN==Kab.Kota))
+jatim_poor
+```
+
+## Visualisasi Distribusi Penduduk Miskin di Jawa Timur
+```{r message=FALSE, warning=FALSE}
+p0 <- jatim_poor %>% 
+  ggplot()+
+  geom_sf(aes(fill=Penduduk.Miskin))+
+  ggsflabel::geom_sf_label_repel(aes(label=str_wrap(ADM2_EN,width = 1)),size=1.75)+
+  scale_fill_stepsn(colours = viridis::magma(n = 6,direction = -1),breaks=seq(0,300,50))+
+  annotation_north_arrow(location = "tl",which_north = "true",
+                         pad_x = unit(0.2, "cm"), pad_y = unit(0.2, "cm"),
+                         style = north_arrow_nautical,width = unit(1.5, "cm"), 
+                         height = unit(1.5, "cm"))+
+  theme_bw()+
+  theme(axis.title = element_blank())
+p0
+```
+
+Visualisasi Interaktif
+```{r message=FALSE, warning=FALSE}
+jatim_poor %>% 
+  mapview::mapview(zcol="Penduduk.Miskin",
+                   at = seq(0,300,50),
+                   col.regions=viridis::magma(n = 7,direction = -1))
+```
+
+Legenda warna menunjukkan semakin gelap warna yang dihasilkan, maka semakin banyak penduduk miskin pada wilayah yang dimaksud, dengan detail sebagai berikut:
+
+* Wilayah yang gelap (ungu tua) seperti Jember, Probolinggo, dan bebeerapa wilayah timur menunjukkan bahwa jumlah pendidik miskin di wilayah tersebut cukup tinggi.
+
+* Wilayah dengan warna yang cenderung lebih terang, seperti Surabaya, Malang dan beberawa wilayah di bagian barat daya memiliki jumlah penduduk miskin yang relatif rendah.
+
+Berdasarkan hal ini, beberapa wilayah di Jawa Timur seperti Jember, Bondowoso, dan Probolinggo terlihat memiliki jumlah penduduk miskin yang tinggi sehingga dapat dijadikan prioritas dalam program kesejahteraan.
+
+Selain itu, wilayah perkotaan di Jawa Timur memiliki angka kemiskinan yang relatif rendah. Artinya, wilayah perkotaan di Jawa Timur menunjukkan tingkat kesejahteraan yang cenderung lebih baik dibandingkan di wilayah Kabupaten.
